@@ -52,7 +52,6 @@ id_ed25519
 *.ppk
 
 # Development symlinks (created per-worktree, not committed)
-.claude
 packages/web/agent-orchestrator.yaml
 
 # Local agent orchestrator config (may contain secrets)
