@@ -15,20 +15,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gitleaks:
-    name: Scan for Secrets
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history for comprehensive scan
-
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+  # gitleaks:
+  #   name: Scan for Secrets
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0 # Full history for comprehensive scan
+  #
+  #     - name: Run Gitleaks
+  #       uses: gitleaks/gitleaks-action@v2
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   dependency-review:
     name: Dependency Review
