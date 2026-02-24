@@ -29,6 +29,7 @@ import {
   type Agent,
   type SCM,
   type Notifier,
+  type Tracker,
   type Session,
   type EventPriority,
   type ProjectConfig as _ProjectConfig,
@@ -412,6 +413,52 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
   }
 
+  /** Post a writeback comment to the issue tracker (fire-and-forget). */
+  function writebackToTracker(session: Session, comment: string): void {
+    if (!session.issueId) return;
+    const project = config.projects[session.projectId];
+    if (!project?.tracker) return;
+
+    const tracker = registry.get<Tracker>("tracker", project.tracker.plugin);
+    if (!tracker?.updateIssue) return;
+
+    // Extract issue number from URL if issueId is a full URL
+    const issueId = session.issueId.match(/\/(\d+)$/)?.[1] ?? session.issueId;
+
+    tracker.updateIssue(issueId, { comment }, project).catch(() => {
+      // Writeback is fire-and-forget — failure must not block lifecycle
+    });
+  }
+
+  /** Build a tracker writeback comment for a state transition. */
+  function getWritebackComment(session: Session, newStatus: SessionStatus): string | null {
+    switch (newStatus) {
+      case "pr_open":
+        return [
+          `🤖 **Agent Orchestrator** completed work on this issue.`,
+          "",
+          session.pr ? `Pull Request: ${session.pr.url}` : "",
+          `Session: \`${session.id}\``,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      case "stuck":
+        return [
+          `🤖 **Agent Orchestrator** session \`${session.id}\` needs attention.`,
+          "",
+          `Status: stuck`,
+        ].join("\n");
+      case "errored":
+        return [
+          `🤖 **Agent Orchestrator** session \`${session.id}\` needs attention.`,
+          "",
+          `Status: errored`,
+        ].join("\n");
+      default:
+        return null;
+    }
+  }
+
   /** Poll a single session and handle state transitions. */
   async function checkSession(session: Session): Promise<void> {
     // Use tracked state if available; otherwise use the persisted metadata status
@@ -431,6 +478,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       if (project) {
         const sessionsDir = getSessionsDir(config.configPath, project.path);
         updateMetadata(sessionsDir, session.id, { status: newStatus });
+      }
+
+      // Tracker writeback for key transitions
+      const writebackComment = getWritebackComment(session, newStatus);
+      if (writebackComment) {
+        writebackToTracker(session, writebackComment);
       }
 
       // Reset allCompleteEmitted when any session becomes active again

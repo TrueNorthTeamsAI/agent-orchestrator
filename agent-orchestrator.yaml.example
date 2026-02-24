@@ -60,6 +60,25 @@ projects:
     # orchestratorRules: |
     #   Prefer to batch-spawn related issues together.
 
+    # Webhook secrets per tracker provider (for auto-spawn from webhooks)
+    # webhooks:
+    #   github:
+    #     secret: ${GITHUB_WEBHOOK_SECRET}    # HMAC-SHA256 secret
+    #   plane:
+    #     secret: ${PLANE_WEBHOOK_SECRET}     # HMAC-SHA256 secret
+    #     workspaceId: "c467e125-..."          # Plane workspace UUID
+
+    # Trigger rules — when to auto-spawn agents
+    # triggers:
+    #   - on: issue.labeled         # event type
+    #     label: "agent-work"       # which label triggers spawn
+    #     action: spawn
+    #   - on: issue.assigned
+    #     assignee: "ao-bot"        # which assignee triggers spawn
+    #     action: spawn
+    #   - on: issue.opened          # spawn on any new issue
+    #     action: spawn
+
     # Per-project reaction overrides
     # reactions:
     #   approved-and-green:

@@ -51,6 +51,33 @@ const NotifierConfigSchema = z
   })
   .passthrough();
 
+const TriggerRuleSchema = z.object({
+  on: z.enum(["issue.labeled", "issue.assigned", "issue.opened", "issue.reopened"]),
+  label: z.string().optional(),
+  assignee: z.string().optional(),
+  action: z.enum(["spawn"]),
+});
+
+const WebhookProviderConfigSchema = z
+  .object({
+    secret: z.string(),
+    workspaceId: z.string().optional(),
+  })
+  .passthrough();
+
+const WebhookProjectConfigSchema = z
+  .object({
+    github: WebhookProviderConfigSchema.optional(),
+    plane: WebhookProviderConfigSchema.optional(),
+  })
+  .optional();
+
+const WebhookConfigSchema = z
+  .object({
+    basePath: z.string().default("/api/webhooks"),
+  })
+  .optional();
+
 const AgentSpecificConfigSchema = z
   .object({
     permissions: z.enum(["skip", "default"]).optional(),
@@ -79,6 +106,8 @@ const ProjectConfigSchema = z.object({
   agentRules: z.string().optional(),
   agentRulesFile: z.string().optional(),
   orchestratorRules: z.string().optional(),
+  webhooks: WebhookProjectConfigSchema,
+  triggers: z.array(TriggerRuleSchema).optional(),
 });
 
 const DefaultPluginsSchema = z.object({
@@ -103,6 +132,7 @@ const OrchestratorConfigSchema = z.object({
     info: ["composio"],
   }),
   reactions: z.record(ReactionConfigSchema).default({}),
+  webhooks: WebhookConfigSchema,
 });
 
 // =============================================================================

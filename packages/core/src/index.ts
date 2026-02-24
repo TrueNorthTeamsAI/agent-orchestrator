@@ -59,6 +59,10 @@ export type { PromptBuildConfig } from "./prompt-builder.js";
 export { generateOrchestratorPrompt } from "./orchestrator-prompt.js";
 export type { OrchestratorPromptConfig } from "./orchestrator-prompt.js";
 
+// Trigger engine — webhook event evaluation
+export { evaluateTriggers, _resetDeliveries } from "./trigger-engine.js";
+export type { TriggerEngineDeps } from "./trigger-engine.js";
+
 // Shared utilities
 export { shellEscape, escapeAppleScript, validateUrl, readLastJsonlEntry } from "./utils.js";
 

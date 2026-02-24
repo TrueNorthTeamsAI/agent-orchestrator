@@ -823,6 +823,9 @@ export interface OrchestratorConfig {
 
   /** Default reaction configs */
   reactions: Record<string, ReactionConfig>;
+
+  /** Top-level webhook configuration */
+  webhooks?: WebhookConfig;
 }
 
 export interface DefaultPlugins {
@@ -883,6 +886,12 @@ export interface ProjectConfig {
 
   /** Rules for the orchestrator agent (stored, reserved for future use) */
   orchestratorRules?: string;
+
+  /** Webhook secrets per tracker provider */
+  webhooks?: WebhookProjectConfig;
+
+  /** Trigger rules — when to auto-spawn */
+  triggers?: TriggerRule[];
 }
 
 export interface TrackerConfig {
@@ -1058,6 +1067,95 @@ export function isIssueNotFoundError(err: unknown): boolean {
     // Linear: "Issue <id> not found" or "No issue with identifier"
     message.includes("no issue with identifier")
   );
+}
+
+// =============================================================================
+// WEBHOOK & TRIGGER TYPES
+// =============================================================================
+
+/** Supported webhook providers */
+export type WebhookProvider = "github" | "plane";
+
+/** Normalized tracker event from any webhook source */
+export interface TrackerEvent {
+  /** Source tracker provider */
+  provider: WebhookProvider;
+  /** Unique delivery ID for idempotency */
+  deliveryId: string;
+  /** Normalized event type */
+  event: "issue.labeled" | "issue.assigned" | "issue.opened" | "issue.reopened";
+  /** Raw action from provider */
+  action: string;
+  /** Issue details */
+  issue: {
+    id: string;
+    number: number;
+    title: string;
+    state: string;
+    labels: string[];
+    assignees: string[];
+    url: string;
+  };
+  /** Repository identifier in "owner/repo" format (GitHub) or workspace+project (Plane) */
+  repo: string;
+  /** Label that was added (for labeled events) */
+  label?: string;
+  /** Assignee login (for assigned events) */
+  assignee?: string;
+  /** Who triggered the event */
+  sender: string;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Original payload for debugging */
+  raw: unknown;
+}
+
+/** Trigger event types that can be configured */
+export type TriggerEventType =
+  | "issue.labeled"
+  | "issue.assigned"
+  | "issue.opened"
+  | "issue.reopened";
+
+/** A trigger rule — when to auto-spawn */
+export interface TriggerRule {
+  /** Event type to match */
+  on: TriggerEventType;
+  /** Label name to match (only for issue.labeled) */
+  label?: string;
+  /** Assignee login to match (only for issue.assigned) */
+  assignee?: string;
+  /** Action to take */
+  action: "spawn";
+}
+
+/** Per-provider webhook config within a project */
+export interface WebhookProviderConfig {
+  /** HMAC-SHA256 secret for signature verification */
+  secret: string;
+  /** Plane workspace UUID (only for Plane) */
+  workspaceId?: string;
+}
+
+/** Webhook config on a project (keyed by provider) */
+export type WebhookProjectConfig = Partial<Record<WebhookProvider, WebhookProviderConfig>>;
+
+/** Top-level webhook config */
+export interface WebhookConfig {
+  /** Path prefix for webhook routes (default: /api/webhooks) */
+  basePath?: string;
+}
+
+/** Decision to spawn a session from a trigger match */
+export interface SpawnDecision {
+  /** Project ID (config key) to spawn for */
+  projectId: string;
+  /** Issue identifier (number as string) */
+  issueId: string;
+  /** Event that triggered the spawn */
+  event: TrackerEvent;
+  /** Which trigger rule matched */
+  matchedRule: TriggerRule;
 }
 
 /** Thrown when a session cannot be restored (e.g. merged, still working). */
