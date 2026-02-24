@@ -59,6 +59,10 @@ export type { PromptBuildConfig } from "./prompt-builder.js";
 export { generateOrchestratorPrompt } from "./orchestrator-prompt.js";
 export type { OrchestratorPromptConfig } from "./orchestrator-prompt.js";
 
+// PRP prompt template — PRP lifecycle instructions for spawned agents
+export { buildPrpPrompt, PRP_LIFECYCLE_PROMPT } from "./prp-prompt-template.js";
+export type { PrpPromptConfig } from "./prp-prompt-template.js";
+
 // Trigger engine — webhook event evaluation
 export { evaluateTriggers, _resetDeliveries } from "./trigger-engine.js";
 export type { TriggerEngineDeps } from "./trigger-engine.js";

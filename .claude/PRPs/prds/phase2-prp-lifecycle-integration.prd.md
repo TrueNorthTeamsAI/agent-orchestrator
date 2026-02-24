@@ -257,7 +257,7 @@ const PrpConfigSchema = z.object({
 | # | Phase | Description | Status | Parallel | Depends | PRP Plan |
 |---|-------|-------------|--------|----------|---------|----------|
 | 1 | Types & Config | `PrpConfig` type, Zod schema, extend `ProjectConfig` with `prp` field | in-progress | with 2 | - | `.claude/PRPs/plans/phase2-types-and-config.plan.md` |
-| 2 | PRP Prompt Template | System prompt file content instructing agents to follow PRP lifecycle | pending | with 1 | - | - |
+| 2 | PRP Prompt Template | System prompt file content instructing agents to follow PRP lifecycle | in-progress | with 1 | - | `.claude/PRPs/plans/phase2-prp-prompt-template.plan.md` |
 | 3 | Spawn Pipeline Integration | Write PRP prompt file to workspace, populate `systemPromptFile` in launch config, symlink PRP plugin | pending | - | 1, 2 | - |
 | 4 | Phase Detection & Metadata | Extend metadata-updater hook to detect PRP artifacts, add `prpPhase` to metadata | pending | with 5 | 3 | - |
 | 5 | Tracker Writeback | Extend `getWritebackComment()` with PRP phase comments, add writeback config filtering | pending | with 4 | 3 | - |
