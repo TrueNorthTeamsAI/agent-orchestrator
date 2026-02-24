@@ -85,6 +85,26 @@ const AgentSpecificConfigSchema = z
   })
   .passthrough();
 
+const PrpGatesSchema = z.object({
+  plan: z.boolean().default(false),
+  pr: z.boolean().default(false),
+});
+
+const PrpWritebackSchema = z.object({
+  investigation: z.boolean().default(true),
+  plan: z.boolean().default(true),
+  implementation: z.boolean().default(true),
+  pr: z.boolean().default(true),
+});
+
+const PrpConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  pluginPath: z.string().optional(),
+  gates: PrpGatesSchema.default({}),
+  writeback: PrpWritebackSchema.default({}),
+  promptFile: z.string().nullable().default(null),
+});
+
 const ProjectConfigSchema = z.object({
   name: z.string().optional(),
   repo: z.string(),
@@ -108,6 +128,7 @@ const ProjectConfigSchema = z.object({
   orchestratorRules: z.string().optional(),
   webhooks: WebhookProjectConfigSchema,
   triggers: z.array(TriggerRuleSchema).optional(),
+  prp: PrpConfigSchema.optional(),
 });
 
 const DefaultPluginsSchema = z.object({
@@ -151,6 +172,9 @@ function expandHome(filepath: string): string {
 function expandPaths(config: OrchestratorConfig): OrchestratorConfig {
   for (const project of Object.values(config.projects)) {
     project.path = expandHome(project.path);
+    if (project.prp?.pluginPath) {
+      project.prp.pluginPath = expandHome(project.prp.pluginPath);
+    }
   }
 
   return config;

@@ -302,11 +302,11 @@ The lifecycle manager already detects these state transitions. Writeback hooks i
 
 | # | Phase | Description | Status | Parallel | Depends | PRP Plan |
 |---|-------|-------------|--------|----------|---------|----------|
-| 1 | Core Types & Config | `TrackerEvent` type, trigger rule Zod schema, config schema extensions | pending | with 2 | - | - |
-| 2 | Webhook Receivers | GitHub + Plane route handlers with signature verification | pending | with 1 | - | - |
-| 3 | Trigger Engine | Rule evaluation, project matching, duplicate detection, spawn dispatch | pending | - | 1, 2 | - |
-| 4 | Tracker Writeback | Call `updateIssue({ comment })` on spawn/completion/error; add Plane tracker plugin | pending | - | 3 | - |
-| 5 | Integration Testing | End-to-end: webhook → trigger → spawn → writeback | pending | - | 4 | - |
+| 1 | Core Types & Config | `TrackerEvent` type, trigger rule Zod schema, config schema extensions | complete | with 2 | - | `.claude/PRPs/plans/completed/phase1-event-driven-spawning.plan.md` |
+| 2 | Webhook Receivers | GitHub + Plane route handlers with signature verification | complete | with 1 | - | `.claude/PRPs/plans/completed/phase1-event-driven-spawning.plan.md` |
+| 3 | Trigger Engine | Rule evaluation, project matching, duplicate detection, spawn dispatch | complete | - | 1, 2 | `.claude/PRPs/plans/completed/phase1-event-driven-spawning.plan.md` |
+| 4 | Tracker Writeback | Call `updateIssue({ comment })` on spawn/completion/error; add Plane tracker plugin | complete | - | 3 | `.claude/PRPs/plans/completed/phase1-event-driven-spawning.plan.md` |
+| 5 | Integration Testing | End-to-end: webhook → trigger → spawn → writeback | complete | - | 4 | `.claude/PRPs/plans/completed/phase1-event-driven-spawning.plan.md` |
 
 ### Phase Details
 
@@ -372,5 +372,5 @@ Phases 1 and 2 can run in parallel in separate worktrees — Phase 1 defines typ
 ---
 
 *Generated: 2026-02-23*
-*Status: DRAFT*
+*Status: COMPLETE*
 *Parent: `.claude/PRPs/prds/vision-prp-task-runner.md` (Phase 1)*

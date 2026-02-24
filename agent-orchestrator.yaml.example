@@ -84,6 +84,20 @@ projects:
     #   approved-and-green:
     #     auto: true         # enable auto-merge for this project
 
+    # PRP lifecycle integration (structured agent methodology)
+    # prp:
+    #   enabled: true
+    #   pluginPath: ~/code/PRPs-agentic-sdlc-starter
+    #   gates:
+    #     plan: false          # Pause after plan creation for human approval
+    #     pr: false            # Pause after PR creation for human review
+    #   writeback:
+    #     investigation: true  # Post summary when investigation completes
+    #     plan: true           # Post plan link when plan is created
+    #     implementation: true # Post progress during ralph loop
+    #     pr: true             # Post PR link when PR is created
+    #   # promptFile: null     # Path to custom PRP prompt; null = use built-in
+
 # Notification channels
 # notifiers:
 #   slack:

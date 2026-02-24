@@ -835,6 +835,36 @@ export interface DefaultPlugins {
   notifiers: string[];
 }
 
+/** PRP gate configuration — which phases require human approval */
+export interface PrpGates {
+  /** Pause after plan creation for human approval */
+  plan: boolean;
+  /** Pause after PR creation for human review */
+  pr: boolean;
+}
+
+/** PRP writeback configuration — which phases post tracker comments */
+export interface PrpWriteback {
+  investigation: boolean;
+  plan: boolean;
+  implementation: boolean;
+  pr: boolean;
+}
+
+/** PRP lifecycle configuration for a project */
+export interface PrpConfig {
+  /** Enable PRP lifecycle for this project */
+  enabled: boolean;
+  /** Path to PRP plugin installation (skills, hooks, etc.) */
+  pluginPath?: string;
+  /** Human approval gates */
+  gates: PrpGates;
+  /** Which phases trigger tracker writeback comments */
+  writeback: PrpWriteback;
+  /** Path to custom PRP prompt template; null = use built-in */
+  promptFile?: string | null;
+}
+
 export interface ProjectConfig {
   /** Display name */
   name: string;
@@ -892,6 +922,9 @@ export interface ProjectConfig {
 
   /** Trigger rules — when to auto-spawn */
   triggers?: TriggerRule[];
+
+  /** PRP lifecycle configuration */
+  prp?: PrpConfig;
 }
 
 export interface TrackerConfig {
@@ -978,6 +1011,8 @@ export interface SessionMetadata {
   dashboardPort?: number;
   terminalWsPort?: number;
   directTerminalWsPort?: number;
+  /** Current PRP lifecycle phase (investigating, planning, implementing, etc.) */
+  prpPhase?: string;
 }
 
 // =============================================================================

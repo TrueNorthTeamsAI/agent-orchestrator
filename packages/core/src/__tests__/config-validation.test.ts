@@ -399,3 +399,96 @@ describe("Config Defaults", () => {
     expect(validated.projects.proj1.tracker).toEqual({ plugin: "github" });
   });
 });
+
+describe("Config Validation - PRP Config", () => {
+  it("accepts project without prp config (backward compatible)", () => {
+    const config = {
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "org/test",
+          defaultBranch: "main",
+        },
+      },
+    };
+    const validated = validateConfig(config);
+    expect(validated.projects.proj1.prp).toBeUndefined();
+  });
+
+  it("accepts minimal prp config (enabled only)", () => {
+    const config = {
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "org/test",
+          defaultBranch: "main",
+          prp: { enabled: true },
+        },
+      },
+    };
+    const validated = validateConfig(config);
+    expect(validated.projects.proj1.prp?.enabled).toBe(true);
+    expect(validated.projects.proj1.prp?.gates.plan).toBe(false);
+    expect(validated.projects.proj1.prp?.gates.pr).toBe(false);
+    expect(validated.projects.proj1.prp?.writeback.investigation).toBe(true);
+  });
+
+  it("accepts full prp config", () => {
+    const config = {
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "org/test",
+          defaultBranch: "main",
+          prp: {
+            enabled: true,
+            pluginPath: "~/code/prp-plugin",
+            gates: { plan: true, pr: false },
+            writeback: { investigation: true, plan: true, implementation: false, pr: true },
+            promptFile: "/path/to/prompt.md",
+          },
+        },
+      },
+    };
+    const validated = validateConfig(config);
+    expect(validated.projects.proj1.prp?.gates.plan).toBe(true);
+    expect(validated.projects.proj1.prp?.writeback.implementation).toBe(false);
+    expect(validated.projects.proj1.prp?.promptFile).toBe("/path/to/prompt.md");
+  });
+
+  it("applies defaults for gates and writeback", () => {
+    const config = {
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "org/test",
+          defaultBranch: "main",
+          prp: { enabled: true, gates: {}, writeback: {} },
+        },
+      },
+    };
+    const validated = validateConfig(config);
+    expect(validated.projects.proj1.prp?.gates).toEqual({ plan: false, pr: false });
+    expect(validated.projects.proj1.prp?.writeback).toEqual({
+      investigation: true,
+      plan: true,
+      implementation: true,
+      pr: true,
+    });
+  });
+
+  it("accepts null promptFile", () => {
+    const config = {
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "org/test",
+          defaultBranch: "main",
+          prp: { enabled: true, promptFile: null },
+        },
+      },
+    };
+    const validated = validateConfig(config);
+    expect(validated.projects.proj1.prp?.promptFile).toBeNull();
+  });
+});
