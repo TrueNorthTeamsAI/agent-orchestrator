@@ -176,11 +176,15 @@ fi
 if [[ -n "$worktree" ]]; then
   current_phase=""
 
-  # Check for plan artifacts (plans/ takes priority — it means investigation is done)
-  if [[ -d "$worktree/.claude/PRPs/plans" ]] && \
-     [[ -n "$(ls -A "$worktree/.claude/PRPs/plans" 2>/dev/null)" ]]; then
-    current_phase="planning"
-  # Check for investigation artifacts
+  # Check for implementation artifacts (reports/ means ralph has started)
+  if [[ -d "$worktree/.claude/PRPs/reports" ]] && \
+     [[ -n "$(ls -A "$worktree/.claude/PRPs/reports" 2>/dev/null)" ]]; then
+    current_phase="implementing"
+  # Check for plan artifacts without implementation
+  elif [[ -d "$worktree/.claude/PRPs/plans" ]] && \
+       [[ -n "$(ls -A "$worktree/.claude/PRPs/plans" 2>/dev/null)" ]]; then
+    current_phase="planning_complete"
+  # Check for investigation artifacts only
   elif [[ -d "$worktree/.claude/PRPs/investigations" ]] && \
        [[ -n "$(ls -A "$worktree/.claude/PRPs/investigations" 2>/dev/null)" ]]; then
     current_phase="investigating"

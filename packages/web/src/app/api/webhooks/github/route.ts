@@ -8,9 +8,14 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
   evaluateTriggers,
+  updateMetadata,
+  getSessionsDir,
   type TrackerEvent,
   type Tracker,
   type ProjectConfig,
+  type SessionManager,
+  type OrchestratorConfig,
+  type PluginRegistry,
 } from "@composio/ao-core";
 import { getServices } from "@/lib/services";
 import { verifySignature } from "@/lib/webhook-utils";
@@ -22,6 +27,39 @@ function normalizeGitHubEvent(
   deliveryId: string,
   payload: Record<string, unknown>,
 ): TrackerEvent | null {
+  // Handle issue_comment events
+  if (eventType === "issue_comment" && action === "created") {
+    const issue = payload.issue as Record<string, unknown>;
+    const comment = payload.comment as Record<string, unknown>;
+    const repo = payload.repository as Record<string, unknown>;
+    const sender = payload.sender as Record<string, unknown>;
+    if (!issue || !comment || !repo) return null;
+
+    const labels = (issue.labels as Array<{ name: string }>) ?? [];
+    const assignees = (issue.assignees as Array<{ login: string }>) ?? [];
+
+    return {
+      provider: "github" as const,
+      deliveryId,
+      event: "issue.comment" as const,
+      action,
+      issue: {
+        id: String(issue.number),
+        number: issue.number as number,
+        title: issue.title as string,
+        state: issue.state as string,
+        labels: labels.map((l) => l.name),
+        assignees: assignees.map((a) => a.login),
+        url: issue.html_url as string,
+      },
+      repo: (repo.full_name as string) ?? "",
+      sender: sender ? (sender.login as string) : "unknown",
+      timestamp: new Date().toISOString(),
+      commentBody: (comment.body as string) ?? "",
+      raw: payload,
+    };
+  }
+
   if (eventType !== "issues") return null;
 
   const normalizedEvent = (() => {
@@ -73,6 +111,73 @@ function normalizeGitHubEvent(
     timestamp: new Date().toISOString(),
     raw: payload,
   };
+}
+
+/** Approval pattern: matches common approval phrases. */
+const APPROVAL_PATTERN = /\b(approved?|lgtm|proceed|go ahead)\b/i;
+
+/** Handle an issue_comment event — route approval comments to gated sessions. */
+async function handleIssueComment(
+  event: TrackerEvent,
+  config: OrchestratorConfig,
+  sessionManager: SessionManager,
+  registry: PluginRegistry,
+): Promise<{ ok: boolean; action?: string; skipped?: string }> {
+  if (!event.commentBody || !APPROVAL_PATTERN.test(event.commentBody)) {
+    return { ok: true, skipped: "not an approval comment" };
+  }
+
+  // Find the active session for this issue
+  const issueUrl = event.issue.url;
+  const sessions = await sessionManager.list();
+  const gatedSession = sessions.find((s) => {
+    if (!s.issueId) return false;
+    // Match by issue URL or issue number
+    const matchesUrl = s.issueId === issueUrl || s.issueId.endsWith(`/${event.issue.id}`);
+    const isGated = s.metadata?.["prpPhase"] === "plan_gate";
+    return matchesUrl && isGated;
+  });
+
+  if (!gatedSession) {
+    return { ok: true, skipped: "no gated session for this issue" };
+  }
+
+  // Resume the gated session
+  try {
+    await sessionManager.send(
+      gatedSession.id,
+      "Plan approved by human reviewer. Continue with implementation using /prp-ralph.",
+    );
+
+    // Update metadata to implementing
+    const project = config.projects[gatedSession.projectId];
+    if (project) {
+      const sessionsDir = getSessionsDir(config.configPath, project.path);
+      updateMetadata(sessionsDir, gatedSession.id, { prpPhase: "implementing" });
+    }
+
+    // Post confirmation comment
+    if (project?.tracker) {
+      const tracker = registry.get<Tracker>("tracker", project.tracker.plugin);
+      if (tracker?.updateIssue) {
+        const issueId = event.issue.id;
+        tracker
+          .updateIssue(
+            issueId,
+            {
+              comment: `✅ **Agent Orchestrator** plan approved. Session \`${gatedSession.id}\` is resuming.`,
+            },
+            project,
+          )
+          .catch(() => {});
+      }
+    }
+
+    return { ok: true, action: "resumed session " + gatedSession.id };
+  } catch (err) {
+    console.error("[webhook/github] resume failed:", err);
+    return { ok: true, skipped: "resume failed" };
+  }
 }
 
 /** Find the webhook secret for a GitHub event by matching repo to project config. */
@@ -128,6 +233,12 @@ export async function POST(request: NextRequest) {
   );
   if (!trackerEvent) {
     return NextResponse.json({ ok: true, skipped: "not an actionable event" });
+  }
+
+  // Handle issue comments — route approval comments to gated sessions
+  if (trackerEvent.event === "issue.comment") {
+    const result = await handleIssueComment(trackerEvent, config, sessionManager, registry);
+    return NextResponse.json(result);
   }
 
   // Evaluate triggers

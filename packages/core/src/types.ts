@@ -730,6 +730,8 @@ export type EventType =
   // Reactions
   | "reaction.triggered"
   | "reaction.escalated"
+  // PRP gates
+  | "prp.plan_gate"
   // Summary
   | "summary.all_complete";
 
@@ -1118,7 +1120,7 @@ export interface TrackerEvent {
   /** Unique delivery ID for idempotency */
   deliveryId: string;
   /** Normalized event type */
-  event: "issue.labeled" | "issue.assigned" | "issue.opened" | "issue.reopened";
+  event: "issue.labeled" | "issue.assigned" | "issue.opened" | "issue.reopened" | "issue.comment";
   /** Raw action from provider */
   action: string;
   /** Issue details */
@@ -1141,6 +1143,8 @@ export interface TrackerEvent {
   sender: string;
   /** ISO 8601 timestamp */
   timestamp: string;
+  /** Comment body (only for issue.comment events) */
+  commentBody?: string;
   /** Original payload for debugging */
   raw: unknown;
 }
@@ -1150,7 +1154,8 @@ export type TriggerEventType =
   | "issue.labeled"
   | "issue.assigned"
   | "issue.opened"
-  | "issue.reopened";
+  | "issue.reopened"
+  | "issue.comment";
 
 /** A trigger rule — when to auto-spawn */
 export interface TriggerRule {
@@ -1161,7 +1166,11 @@ export interface TriggerRule {
   /** Assignee login to match (only for issue.assigned) */
   assignee?: string;
   /** Action to take */
-  action: "spawn";
+  action: "spawn" | "resume-session";
+  /** Regex pattern to match comment body (for issue.comment triggers) */
+  commentPattern?: string;
+  /** Message to send when resuming a session */
+  message?: string;
 }
 
 /** Per-provider webhook config within a project */

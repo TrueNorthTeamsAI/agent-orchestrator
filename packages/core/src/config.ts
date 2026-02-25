@@ -301,6 +301,12 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
       priority: "action",
       message: "PR is ready to merge",
     },
+    "plan-gate": {
+      auto: true,
+      action: "notify",
+      priority: "action",
+      message: "Plan ready for review",
+    },
     "agent-stuck": {
       auto: true,
       action: "notify",

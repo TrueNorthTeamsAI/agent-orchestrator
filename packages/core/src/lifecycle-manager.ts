@@ -11,6 +11,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   SESSION_STATUS,
   PR_STATE,
@@ -476,11 +478,52 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         return `🔍 **Agent Orchestrator** session \`${session.id}\` started investigating this issue.`;
       case "planning":
         return `📋 **Agent Orchestrator** session \`${session.id}\` is creating an implementation plan.`;
+      case "planning_complete":
+        return `📋 **Agent Orchestrator** session \`${session.id}\` has completed the implementation plan.`;
       case "implementing":
         return `🔨 **Agent Orchestrator** session \`${session.id}\` is implementing the plan.`;
+      case "plan_gate":
+        return null; // Gate comment already posted in gate logic
       default:
         return null;
     }
+  }
+
+  /** Build a tracker comment for plan gate — includes plan content and approval instructions. */
+  function buildPlanGateComment(session: Session): string {
+    const MAX_PLAN_LENGTH = 4000;
+    let planContent = "(No plan file found)";
+
+    try {
+      const workspacePath = session.workspacePath ?? "";
+      if (workspacePath) {
+        const plansDir = join(workspacePath, ".claude", "PRPs", "plans");
+        const files = readdirSync(plansDir).filter((f) => f.endsWith(".plan.md"));
+        if (files.length > 0) {
+          const raw = readFileSync(join(plansDir, files[0]), "utf-8");
+          planContent =
+            raw.length > MAX_PLAN_LENGTH
+              ? raw.slice(0, MAX_PLAN_LENGTH) + "\n\n... (truncated — see full plan in workspace)"
+              : raw;
+        }
+      }
+    } catch {
+      // Workspace files missing — use fallback text
+    }
+
+    return [
+      `📋 **Agent Orchestrator** session \`${session.id}\` has created a plan and is waiting for approval.`,
+      "",
+      "<details>",
+      "<summary>View Plan</summary>",
+      "",
+      planContent,
+      "",
+      "</details>",
+      "",
+      '> **To approve**: comment "approved", "lgtm", or "proceed" on this issue.',
+      "> The agent will resume automatically.",
+    ].join("\n");
   }
 
   /** Poll a single session and handle state transitions. */
@@ -590,12 +633,30 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           const phaseEnabled =
             (newPrpPhase === "investigating" && wb?.investigation !== false) ||
             (newPrpPhase === "planning" && wb?.plan !== false) ||
+            (newPrpPhase === "planning_complete" && wb?.plan !== false) ||
             (newPrpPhase === "implementing" && wb?.implementation !== false);
           if (phaseEnabled) {
             const comment = getPrpWritebackComment(session, newPrpPhase, oldPrpPhase);
             if (comment) {
               writebackToTracker(session, comment);
             }
+          }
+
+          // Plan gate: if enabled, notify human and update metadata to gate state
+          if (newPrpPhase === "planning_complete" && project.prp.gates?.plan) {
+            const planComment = buildPlanGateComment(session);
+            writebackToTracker(session, planComment);
+
+            const event = createEvent("prp.plan_gate", {
+              sessionId: session.id,
+              projectId: session.projectId,
+              message: `Plan ready for review — session ${session.id}`,
+              priority: "action",
+            });
+            await notifyHuman(event, "action");
+
+            const sessionsDir = getSessionsDir(config.configPath, project.path);
+            updateMetadata(sessionsDir, session.id, { prpPhase: "plan_gate" });
           }
         }
       }

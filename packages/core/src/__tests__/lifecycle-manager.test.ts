@@ -1101,3 +1101,176 @@ describe("PRP phase writeback", () => {
     expect(mockTracker.updateIssue).not.toHaveBeenCalled();
   });
 });
+
+describe("PRP plan gate", () => {
+  function makePrpConfig(overrides: Record<string, unknown> = {}) {
+    return {
+      enabled: true,
+      gates: { plan: false, pr: false },
+      writeback: { investigation: true, plan: true, implementation: true, pr: true },
+      ...overrides,
+    };
+  }
+
+  function setupTrackerAndNotifierRegistry(): {
+    mockTracker: Tracker;
+    mockNotifier: Notifier;
+    registry: PluginRegistry;
+  } {
+    const mockTracker: Tracker = {
+      name: "mock-tracker",
+      getIssue: vi.fn(),
+      isCompleted: vi.fn().mockResolvedValue(false),
+      issueUrl: vi.fn().mockReturnValue("https://github.com/org/repo/issues/1"),
+      branchName: vi.fn().mockReturnValue("feat/test"),
+      generatePrompt: vi.fn().mockResolvedValue(""),
+      updateIssue: vi.fn().mockResolvedValue(undefined),
+      listIssues: vi.fn(),
+    };
+
+    const mockNotifier: Notifier = {
+      name: "mock-notifier",
+      notify: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name?: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "tracker") return mockTracker;
+        if (slot === "notifier" && name === "desktop") return mockNotifier;
+        return null;
+      }),
+    };
+
+    return { mockTracker, mockNotifier, registry };
+  }
+
+  it("posts plan gate comment and notifies when planning_complete with gates.plan enabled", async () => {
+    const { mockTracker, mockNotifier, registry } = setupTrackerAndNotifierRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({ gates: { plan: true, pr: false } });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      workspacePath: "/tmp/ws",
+      metadata: { prpPhase: "planning_complete" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    // Should post the normal writeback AND the gate comment (2 calls)
+    expect(mockTracker.updateIssue).toHaveBeenCalledTimes(2);
+    // Gate comment should contain approval instructions
+    expect(mockTracker.updateIssue).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ comment: expect.stringContaining("approval") }),
+      expect.anything(),
+    );
+    // Should notify human
+    expect(mockNotifier.notify).toHaveBeenCalled();
+  });
+
+  it("does not gate when gates.plan is false", async () => {
+    const { mockTracker, mockNotifier, registry } = setupTrackerAndNotifierRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({ gates: { plan: false, pr: false } });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "planning_complete" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    // Should post normal writeback only (1 call), no gate comment
+    expect(mockTracker.updateIssue).toHaveBeenCalledTimes(1);
+    expect(mockTracker.updateIssue).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ comment: expect.stringContaining("completed the implementation plan") }),
+      expect.anything(),
+    );
+    // Should NOT notify
+    expect(mockNotifier.notify).not.toHaveBeenCalled();
+  });
+
+  it("does not re-trigger gate on subsequent polls", async () => {
+    const { mockTracker, registry } = setupTrackerAndNotifierRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({ gates: { plan: true, pr: false } });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "planning_complete" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+    await lm.check("app-1");
+
+    // updateIssue called only on first detection (2 calls: writeback + gate)
+    expect(mockTracker.updateIssue).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles missing plan file gracefully", async () => {
+    const { mockTracker, registry } = setupTrackerAndNotifierRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({ gates: { plan: true, pr: false } });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      workspacePath: "/tmp/nonexistent-workspace",
+      metadata: { prpPhase: "planning_complete" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    // Should not throw
+    await lm.check("app-1");
+
+    // Should still post a gate comment with fallback text
+    expect(mockTracker.updateIssue).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ comment: expect.stringContaining("approval") }),
+      expect.anything(),
+    );
+  });
+});
