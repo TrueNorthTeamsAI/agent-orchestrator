@@ -260,7 +260,7 @@ const PrpConfigSchema = z.object({
 | 2 | PRP Prompt Template | System prompt file content instructing agents to follow PRP lifecycle | in-progress | with 1 | - | `.claude/PRPs/plans/phase2-prp-prompt-template.plan.md` |
 | 3 | Spawn Pipeline Integration | Write PRP prompt file to workspace, populate `systemPromptFile` in launch config, symlink PRP plugin | in-progress | - | 1, 2 | `.claude/PRPs/plans/phase2-spawn-pipeline-integration.plan.md` |
 | 4 | Phase Detection & Metadata | Extend metadata-updater hook to detect PRP artifacts, add `prpPhase` to metadata | in-progress | with 5 | 3 | `.claude/PRPs/plans/phase2-phase-detection-metadata.plan.md` |
-| 5 | Tracker Writeback | Extend `getWritebackComment()` with PRP phase comments, add writeback config filtering | pending | with 4 | 3 | - |
+| 5 | Tracker Writeback | Extend `getWritebackComment()` with PRP phase comments, add writeback config filtering | in-progress | with 4 | 3 | `.claude/PRPs/plans/phase2-tracker-writeback.plan.md` |
 | 6 | Plan Gate | Gate reaction type, pause/notify/resume flow for plan approval | pending | - | 4, 5 | - |
 | 7 | Integration Testing | End-to-end: webhook → PRP-aware spawn → phase detection → writeback → gate | pending | - | 6 | - |
 
