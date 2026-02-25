@@ -15,6 +15,7 @@ import type {
   Agent,
   SCM,
   Notifier,
+  Tracker,
   ActivityState,
   PRInfo,
 } from "../types.js";
@@ -863,5 +864,240 @@ describe("getStates", () => {
     // Modifying returned map shouldn't affect internal state
     states.set("app-1", "killed");
     expect(lm.getStates().get("app-1")).toBe("working");
+  });
+});
+
+describe("PRP phase writeback", () => {
+  function makePrpConfig(overrides: Record<string, unknown> = {}) {
+    return {
+      enabled: true,
+      gates: { plan: false, pr: false },
+      writeback: { investigation: true, plan: true, implementation: true, pr: true },
+      ...overrides,
+    };
+  }
+
+  function setupTrackerRegistry(): { mockTracker: Tracker; registry: PluginRegistry } {
+    const mockTracker: Tracker = {
+      name: "mock-tracker",
+      getIssue: vi.fn(),
+      isCompleted: vi.fn().mockResolvedValue(false),
+      issueUrl: vi.fn().mockReturnValue("https://github.com/org/repo/issues/1"),
+      branchName: vi.fn().mockReturnValue("feat/test"),
+      generatePrompt: vi.fn().mockResolvedValue(""),
+      updateIssue: vi.fn().mockResolvedValue(undefined),
+      listIssues: vi.fn(),
+    };
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "tracker") return mockTracker;
+        return null;
+      }),
+    };
+
+    return { mockTracker, registry };
+  }
+
+  it("posts investigation comment when prpPhase transitions to investigating", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig();
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "investigating" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    expect(mockTracker.updateIssue).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ comment: expect.stringContaining("investigating") }),
+      expect.anything(),
+    );
+  });
+
+  it("posts planning comment when prpPhase transitions to planning", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig();
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "planning" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    expect(mockTracker.updateIssue).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ comment: expect.stringContaining("plan") }),
+      expect.anything(),
+    );
+  });
+
+  it("respects writeback.investigation: false", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({
+      writeback: { investigation: false, plan: true, implementation: true, pr: true },
+    });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "investigating" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    expect(mockTracker.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("does not post PRP comments for non-PRP projects", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    // No prp config on project
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "investigating" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+
+    expect(mockTracker.updateIssue).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate comment on same phase", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig();
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+
+    const session = makeSession({
+      status: "working",
+      issueId: "https://github.com/org/repo/issues/1",
+      metadata: { prpPhase: "investigating" },
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
+    await lm.check("app-1");
+    await lm.check("app-1");
+
+    // updateIssue should only be called once (first detection)
+    expect(mockTracker.updateIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects writeback.pr: false for pr_open status", async () => {
+    const { mockTracker, registry } = setupTrackerRegistry();
+    config.projects["my-app"]!.prp = makePrpConfig({
+      writeback: { investigation: true, plan: true, implementation: true, pr: false },
+    });
+    config.projects["my-app"]!.tracker = { plugin: "mock-tracker" };
+    config.projects["my-app"]!.scm = { plugin: "github" };
+
+    // Need an SCM that returns "open" for PR state
+    const mockSCM: SCM = {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("open"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn().mockResolvedValue("passing"),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn().mockResolvedValue("none"),
+      getPendingComments: vi.fn(),
+      getAutomatedComments: vi.fn(),
+      getMergeability: vi.fn(),
+    };
+
+    const registryWithSCM: PluginRegistry = {
+      ...registry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "tracker") return mockTracker;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    // Transition from working → pr_open
+    const session = makeSession({
+      status: "working",
+      pr: makePR(),
+      issueId: "https://github.com/org/repo/issues/1",
+    });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config,
+      registry: registryWithSCM,
+      sessionManager: mockSessionManager,
+    });
+    await lm.check("app-1");
+
+    expect(lm.getStates().get("app-1")).toBe("pr_open");
+    // The pr_open writeback should be suppressed
+    expect(mockTracker.updateIssue).not.toHaveBeenCalled();
   });
 });

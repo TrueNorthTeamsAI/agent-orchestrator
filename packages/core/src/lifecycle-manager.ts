@@ -174,6 +174,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   const { config, registry, sessionManager } = deps;
 
   const states = new Map<SessionId, SessionStatus>();
+  const prpPhases = new Map<string, string>(); // sessionId → last-seen prpPhase
   const reactionTrackers = new Map<string, ReactionTracker>(); // "sessionId:reactionKey"
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let polling = false; // re-entrancy guard
@@ -431,9 +432,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   }
 
   /** Build a tracker writeback comment for a state transition. */
-  function getWritebackComment(session: Session, newStatus: SessionStatus): string | null {
+  function getWritebackComment(
+    session: Session,
+    newStatus: SessionStatus,
+    project?: _ProjectConfig,
+  ): string | null {
     switch (newStatus) {
       case "pr_open":
+        if (project?.prp?.enabled && project.prp.writeback?.pr === false) return null;
         return [
           `🤖 **Agent Orchestrator** completed work on this issue.`,
           "",
@@ -454,6 +460,24 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           "",
           `Status: errored`,
         ].join("\n");
+      default:
+        return null;
+    }
+  }
+
+  /** Build a tracker writeback comment for a PRP phase transition. */
+  function getPrpWritebackComment(
+    session: Session,
+    newPhase: string,
+    _oldPhase: string | undefined,
+  ): string | null {
+    switch (newPhase) {
+      case "investigating":
+        return `🔍 **Agent Orchestrator** session \`${session.id}\` started investigating this issue.`;
+      case "planning":
+        return `📋 **Agent Orchestrator** session \`${session.id}\` is creating an implementation plan.`;
+      case "implementing":
+        return `🔨 **Agent Orchestrator** session \`${session.id}\` is implementing the plan.`;
       default:
         return null;
     }
@@ -481,7 +505,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       }
 
       // Tracker writeback for key transitions
-      const writebackComment = getWritebackComment(session, newStatus);
+      const writebackComment = getWritebackComment(session, newStatus, project);
       if (writebackComment) {
         writebackToTracker(session, writebackComment);
       }
@@ -551,6 +575,31 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       // No transition but track current state
       states.set(session.id, newStatus);
     }
+
+    // PRP phase change detection — runs on every poll, independent of status transitions
+    const newPrpPhase = session.metadata?.["prpPhase"] as string | undefined;
+    if (newPrpPhase) {
+      const oldPrpPhase = prpPhases.get(session.id);
+      if (newPrpPhase !== oldPrpPhase) {
+        prpPhases.set(session.id, newPrpPhase);
+
+        const project = config.projects[session.projectId];
+        if (project?.prp?.enabled) {
+          // Map phase name to writeback config key
+          const wb = project.prp.writeback;
+          const phaseEnabled =
+            (newPrpPhase === "investigating" && wb?.investigation !== false) ||
+            (newPrpPhase === "planning" && wb?.plan !== false) ||
+            (newPrpPhase === "implementing" && wb?.implementation !== false);
+          if (phaseEnabled) {
+            const comment = getPrpWritebackComment(session, newPrpPhase, oldPrpPhase);
+            if (comment) {
+              writebackToTracker(session, comment);
+            }
+          }
+        }
+      }
+    }
   }
 
   /** Run one polling cycle across all sessions. */
@@ -580,6 +629,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       for (const trackedId of states.keys()) {
         if (!currentSessionIds.has(trackedId)) {
           states.delete(trackedId);
+        }
+      }
+      for (const trackedId of prpPhases.keys()) {
+        if (!currentSessionIds.has(trackedId)) {
+          prpPhases.delete(trackedId);
         }
       }
       for (const trackerKey of reactionTrackers.keys()) {
