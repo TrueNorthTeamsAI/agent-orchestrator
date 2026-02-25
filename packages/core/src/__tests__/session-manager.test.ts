@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -1333,5 +1333,118 @@ describe("PluginRegistry.loadBuiltins importFn", () => {
     // Should have attempted to import builtin plugins via the provided importFn
     expect(importedPackages.length).toBeGreaterThan(0);
     expect(importedPackages).toContain("@composio/ao-plugin-runtime-tmux");
+  });
+});
+
+describe("PRP lifecycle integration", () => {
+  function makePrpConfig(overrides: Record<string, unknown> = {}) {
+    return {
+      enabled: true,
+      gates: { plan: false, pr: false },
+      writeback: { investigation: true, plan: true, implementation: true, pr: true },
+      ...overrides,
+    };
+  }
+
+  it("sets systemPromptFile when PRP enabled and issueId present", async () => {
+    const prpConfig = makePrpConfig();
+    const projectWithPrp = {
+      ...config.projects["my-app"],
+      prp: prpConfig,
+    };
+    const configWithPrp = {
+      ...config,
+      projects: { "my-app": projectWithPrp },
+    };
+
+    const sm = createSessionManager({ config: configWithPrp, registry: mockRegistry });
+    await sm.spawn({ projectId: "my-app", issueId: "#42" });
+
+    const launchCall = (mockAgent.getLaunchCommand as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(launchCall.systemPromptFile).toBeDefined();
+    expect(typeof launchCall.systemPromptFile).toBe("string");
+  });
+
+  it("does not set systemPromptFile when PRP disabled", async () => {
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.spawn({ projectId: "my-app", issueId: "#42" });
+
+    const launchCall = (mockAgent.getLaunchCommand as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(launchCall.systemPromptFile).toBeUndefined();
+  });
+
+  it("does not set systemPromptFile when no issueId", async () => {
+    const prpConfig = makePrpConfig();
+    const projectWithPrp = {
+      ...config.projects["my-app"],
+      prp: prpConfig,
+    };
+    const configWithPrp = {
+      ...config,
+      projects: { "my-app": projectWithPrp },
+    };
+
+    const sm = createSessionManager({ config: configWithPrp, registry: mockRegistry });
+    await sm.spawn({ projectId: "my-app" });
+
+    const launchCall = (mockAgent.getLaunchCommand as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(launchCall.systemPromptFile).toBeUndefined();
+  });
+
+  it("PRP prompt file contains issue ID and PRP content", async () => {
+    const prpConfig = makePrpConfig();
+    const projectWithPrp = {
+      ...config.projects["my-app"],
+      prp: prpConfig,
+    };
+    const configWithPrp = {
+      ...config,
+      projects: { "my-app": projectWithPrp },
+    };
+
+    const sm = createSessionManager({ config: configWithPrp, registry: mockRegistry });
+    await sm.spawn({ projectId: "my-app", issueId: "#42" });
+
+    const launchCall = (mockAgent.getLaunchCommand as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const promptContent = readFileSync(launchCall.systemPromptFile, "utf-8");
+    expect(promptContent).toContain("#42");
+    expect(promptContent).toContain("PRP Methodology");
+  });
+
+  it.skipIf(process.platform === "win32")("symlinks PRP plugin subdirectories when pluginPath set", async () => {
+    // Create mock PRP plugin directory with skills and rules
+    const prpPluginDir = join(tmpDir, "prp-plugin");
+    mkdirSync(join(prpPluginDir, ".claude", "skills"), { recursive: true });
+    mkdirSync(join(prpPluginDir, ".claude", "rules"), { recursive: true });
+    writeFileSync(join(prpPluginDir, ".claude", "skills", "test.md"), "skill content");
+    writeFileSync(join(prpPluginDir, ".claude", "rules", "test.md"), "rule content");
+
+    // Create workspace directory (mock workspace returns this path)
+    const wsPath = "/tmp/mock-ws/app-1";
+    mkdirSync(wsPath, { recursive: true });
+
+    const prpConfig = makePrpConfig({ pluginPath: prpPluginDir });
+    const projectWithPrp = {
+      ...config.projects["my-app"],
+      prp: prpConfig,
+    };
+    const configWithPrp = {
+      ...config,
+      projects: { "my-app": projectWithPrp },
+    };
+
+    const sm = createSessionManager({ config: configWithPrp, registry: mockRegistry });
+    await sm.spawn({ projectId: "my-app", issueId: "#42" });
+
+    // Check symlinks exist
+    const skillsTarget = join(wsPath, ".claude", "skills");
+    const rulesTarget = join(wsPath, ".claude", "rules");
+    expect(existsSync(skillsTarget)).toBe(true);
+    expect(existsSync(rulesTarget)).toBe(true);
+    expect(lstatSync(skillsTarget).isSymbolicLink()).toBe(true);
+    expect(lstatSync(rulesTarget).isSymbolicLink()).toBe(true);
+
+    // Clean up
+    rmSync(wsPath, { recursive: true, force: true });
   });
 });

@@ -11,8 +11,8 @@
  * Reference: scripts/claude-ao-session, scripts/send-to-session
  */
 
-import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync, lstatSync, rmSync, symlinkSync } from "node:fs";
+import { join, dirname } from "node:path";
 import {
   isIssueNotFoundError,
   isRestorable,
@@ -48,6 +48,7 @@ import {
   reserveSessionId,
 } from "./metadata.js";
 import { buildPrompt } from "./prompt-builder.js";
+import { buildPrpPrompt } from "./prp-prompt-template.js";
 import {
   getSessionsDir,
   getProjectBaseDir,
@@ -427,6 +428,40 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       }
     }
 
+    // Write PRP system prompt file when PRP is enabled and we have an issue
+    let systemPromptFile: string | undefined;
+    if (project.prp?.enabled && spawnConfig.issueId) {
+      const prpPrompt = buildPrpPrompt({
+        prp: project.prp,
+        issueId: spawnConfig.issueId,
+        projectName: project.name ?? spawnConfig.projectId,
+      });
+      const baseDir = getProjectBaseDir(config.configPath, project.path);
+      mkdirSync(baseDir, { recursive: true });
+      systemPromptFile = join(baseDir, `prp-prompt-${sessionId}.md`);
+      writeFileSync(systemPromptFile, prpPrompt, "utf-8");
+    }
+
+    // Symlink PRP plugin skill/rule directories into workspace when enabled
+    if (project.prp?.enabled && project.prp.pluginPath && workspacePath !== project.path) {
+      const prpPluginPath = project.prp.pluginPath;
+      const prpSubdirs = [".claude/skills", ".claude/rules"];
+      for (const subdir of prpSubdirs) {
+        const sourcePath = join(prpPluginPath, subdir);
+        if (!existsSync(sourcePath)) continue;
+
+        const targetPath = join(workspacePath, subdir);
+        try {
+          lstatSync(targetPath);
+          rmSync(targetPath, { recursive: true, force: true });
+        } catch {
+          // Doesn't exist — fine
+        }
+        mkdirSync(dirname(targetPath), { recursive: true });
+        symlinkSync(sourcePath, targetPath);
+      }
+    }
+
     // Generate prompt with validated issue
     let issueContext: string | undefined;
     if (spawnConfig.issueId && plugins.tracker && resolvedIssue) {
@@ -454,6 +489,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       prompt: composedPrompt ?? spawnConfig.prompt,
       permissions: project.agentConfig?.permissions,
       model: project.agentConfig?.model,
+      systemPromptFile,
     };
 
     let handle: RuntimeHandle;
