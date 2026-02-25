@@ -161,6 +161,42 @@ if [[ "$command" =~ ^gh[[:space:]]+pr[[:space:]]+merge ]]; then
   exit 0
 fi
 
+# ============================================================================
+# PRP Phase Detection (artifact-based)
+# ============================================================================
+
+# Detect PRP phase by checking for artifact directories in the workspace.
+# The workspace root is derived from the worktree path in metadata.
+
+worktree=""
+if [[ -f "$metadata_file" ]]; then
+  worktree=$(grep "^worktree=" "$metadata_file" | cut -d'=' -f2-)
+fi
+
+if [[ -n "$worktree" ]]; then
+  current_phase=""
+
+  # Check for plan artifacts (plans/ takes priority — it means investigation is done)
+  if [[ -d "$worktree/.claude/PRPs/plans" ]] && \
+     [[ -n "$(ls -A "$worktree/.claude/PRPs/plans" 2>/dev/null)" ]]; then
+    current_phase="planning"
+  # Check for investigation artifacts
+  elif [[ -d "$worktree/.claude/PRPs/investigations" ]] && \
+       [[ -n "$(ls -A "$worktree/.claude/PRPs/investigations" 2>/dev/null)" ]]; then
+    current_phase="investigating"
+  fi
+
+  # Only update if we detected a phase and it differs from current
+  if [[ -n "$current_phase" ]]; then
+    existing_phase=$(grep "^prpPhase=" "$metadata_file" | cut -d'=' -f2- || echo "")
+    if [[ "$current_phase" != "$existing_phase" ]]; then
+      update_metadata_key "prpPhase" "$current_phase"
+      echo '{"systemMessage": "Updated metadata: prpPhase = '"$current_phase"'"}'
+      exit 0
+    fi
+  fi
+fi
+
 # No matching command, exit silently
 echo '{}'
 exit 0

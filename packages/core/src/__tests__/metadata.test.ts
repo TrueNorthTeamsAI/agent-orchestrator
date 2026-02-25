@@ -82,6 +82,31 @@ describe("writeMetadata + readMetadata", () => {
     expect(content).toContain("issue=https://linear.app/team/issue/INT-123\n");
   });
 
+  it("writes and reads prpPhase field", () => {
+    writeMetadata(dataDir, "app-prp", {
+      worktree: "/tmp/w",
+      branch: "feat/test",
+      status: "working",
+      prpPhase: "investigating",
+    });
+
+    const meta = readMetadata(dataDir, "app-prp");
+    expect(meta).not.toBeNull();
+    expect(meta!.prpPhase).toBe("investigating");
+  });
+
+  it("returns undefined prpPhase when not set", () => {
+    writeMetadata(dataDir, "app-noprp", {
+      worktree: "/tmp/w",
+      branch: "main",
+      status: "working",
+    });
+
+    const meta = readMetadata(dataDir, "app-noprp");
+    expect(meta).not.toBeNull();
+    expect(meta!.prpPhase).toBeUndefined();
+  });
+
   it("omits optional fields that are undefined", () => {
     writeMetadata(dataDir, "app-4", {
       worktree: "/tmp/w",
@@ -177,6 +202,20 @@ describe("updateMetadata", () => {
 
     const raw = readMetadataRaw(dataDir, "upd-3");
     expect(raw).toEqual({ status: "new", branch: "test" });
+  });
+
+  it("updates prpPhase via updateMetadata", () => {
+    writeMetadata(dataDir, "upd-prp", {
+      worktree: "/tmp/w",
+      branch: "main",
+      status: "working",
+      prpPhase: "investigating",
+    });
+
+    updateMetadata(dataDir, "upd-prp", { prpPhase: "planning" });
+
+    const meta = readMetadata(dataDir, "upd-prp");
+    expect(meta!.prpPhase).toBe("planning");
   });
 
   it("ignores undefined values", () => {
